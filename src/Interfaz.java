@@ -81,6 +81,42 @@ public class Interfaz {
    */
   public static final int HIGH = 1;
 
+  private static final int FIRMATA_LCD_REQUEST = 3;
+  private static final int FIRMATA_LCD_PRINT = 0;
+  private static final int FIRMATA_LCD_PUSH = 1;
+  private static final int FIRMATA_LCD_CLEAR = 2;
+
+  private static final int  FIRMATA_DC_REQUEST		 = 2;
+  private static final int  FIRMATA_DC_CONFIG		 = 0;
+  private static final int  FIRMATA_DC_ON			 = 1;
+  private static final int  FIRMATA_DC_OFF			 = 2;
+  private static final int  FIRMATA_DC_BRAKE		 = 3;
+  private static final int  FIRMATA_DC_INVERSE		 = 4;
+  private static final int  FIRMATA_DC_DIR			 = 5;
+  private static final int FIRMATA_DC_SPEED = 6;
+
+  private static final int FIRMATA_STEPPER_REQUEST = 0x62;
+  private static final int FIRMATA_STEPPER_CONFIG = 0x00;
+  private static final int FIRMATA_STEPPER_STEP = 0x02;
+  private static final int FIRMATA_STEPPER_ENABLE = 0x04;
+  private static final int FIRMATA_STEPPER_STOP = 0x05;
+  private static final int FIRMATA_STEPPER_REPORT_POSITION = 0x06;
+  private static final int FIRMATA_STEPPER_ACCEL = 0x08;
+  private static final int FIRMATA_STEPPER_SPEED = 0x09;
+  private static final int FIRMATA_STEPPER_MOVE_COMPLETE = 0x0a;
+ 
+  private static final int  FIRMATA_I2C_REQUEST	 = 0x76;
+  private static final int  FIRMATA_I2C_REPLY	 = 0x77;
+  private static final int  FIRMATA_I2C_CONFIG	 = 0x78;
+  private static final int  FIRMATA_I2C_AUTO_RESTART	 = 0x40;
+  private static final int  FIRMATA_I2C_10_BIT		 = 0x20;
+  private static final int  FIRMATA_I2C_WRITE		 = 0x00;
+  private static final int  FIRMATA_I2C_READ_ONCE		 = 0x08;
+  private static final int  FIRMATA_I2C_READ_CONTINUOUS	 = 0x10;
+  private static final int FIRMATA_I2C_STOP_READING = 0x18;
+  private static final double MAX_SIGNIFICAND = 8388608; // 2^23
+
+  
   PApplet parent;
   Serial serial;
   SerialProxy serialProxy;
@@ -111,11 +147,11 @@ public class Interfaz {
   public class FirmataWriter implements Firmata.Writer {
     public void write(int val) {
       serial.write(val);
-//      System.out.print("<" + val + " ");
+      //      System.out.print("<" + val + " ");
     }
   }
 
-  public void dispose() {
+    public void dispose() {
     this.serial.dispose();
   }
 
@@ -162,9 +198,15 @@ public class Interfaz {
 
     try {
       Thread.sleep(3000); // let bootloader timeout
-    } catch (InterruptedException e) {}
+    } catch (InterruptedException e) {
+    }
 
     firmata.init();
+    try {
+      Thread.sleep(4000); // let firmware communication timeout
+    } catch (InterruptedException e) {
+    }
+
   }
 
   /**
@@ -250,4 +292,280 @@ public class Interfaz {
       throw new RuntimeException("Error inside Arduino.servoWrite()");
     }
   }
+
+  /*
+  LCD
+  */
+
+  public class LCD {
+
+  /**
+   * Clears LCD screen
+   *
+   */
+    public void clear() {
+      int[] data = { FIRMATA_LCD_REQUEST, FIRMATA_LCD_CLEAR };
+      firmata.sendSysex(data);
+    }
+
+  /**
+   * Prints a text on a single row of screen
+   *
+   * @param row the row
+   * @param str the text to print (max 16 chars)
+   */
+  public void print(int row, String str) {
+      int[] data = new int[str.length() * 2 + 3];
+      data[0] = FIRMATA_LCD_REQUEST;
+      data[1] = FIRMATA_LCD_PRINT;
+      data[2] = row;
+      int i = 0;
+      for (char c : str.toCharArray()) {
+        data[i * 2 + 3] = (int) c & 0x7F;
+        data[i * 2 + 4] = ((int) c >> 7) & 0x7F;
+        i++;
+      }
+      firmata.sendSysex(data);
+    }
+
+  }
+
+  /**
+   * Returns LCD Instance
+   *
+   */
+  public LCD lcd() {
+    return new LCD();
+  }
+
+  /*
+  * OUTPUT
+  */
+  
+  public class OUTPUT {
+    private int index;
+    private int direction;
+    private int power;
+
+    public OUTPUT(int _index) {
+      index = _index - 1;
+    }
+
+  /**
+   * Turns on an output
+   */
+    public void on() {
+      int[] data = {FIRMATA_DC_REQUEST, FIRMATA_DC_ON, index};
+      firmata.sendSysex(data);
+    }
+  /**
+   * Turns off an output
+   */
+  public void off() {
+      int[] data = {FIRMATA_DC_REQUEST, FIRMATA_DC_OFF, index};
+      firmata.sendSysex(data);
+    }
+  /**
+   * Applies brake to an output
+   */
+    public void brake() {
+      int[] data = { FIRMATA_DC_REQUEST, FIRMATA_DC_BRAKE, index };
+      firmata.sendSysex(data);
+    }
+    
+    /**
+     * Sets direction to an output
+     * 
+     * @param dir the direction
+     */
+    public void direction(int dir) {
+      direction = dir;
+      int[] data = { FIRMATA_DC_REQUEST, FIRMATA_DC_DIR, index, direction };
+      firmata.sendSysex(data);
+    }
+
+  /**
+   * Gets direction of an output
+   */
+    public int direction() {
+      return direction;
+    }
+
+    /**
+     * Sets power to an output
+     * 
+     * @param pow the power
+     */
+    public void power(int pow) {
+      power = pow;
+      int[] data = { FIRMATA_DC_REQUEST, FIRMATA_DC_SPEED, index, power };
+      firmata.sendSysex(data);
+    }
+
+    /**
+   * Gets power of an output
+   */
+    public int power() {
+      return power;
+    }
+
+  }
+
+  /**
+   * Returns OUTPUT Instance
+   *
+   */
+  public OUTPUT output(int index) {
+    if (index < 1 || index > 8) {
+      throw new RuntimeException("Outputs are from 1 to 8");
+    }
+    return new OUTPUT(index);
+  }
+
+  /*
+  * Steppers
+  */
+  public class STEPPER {
+    private int index;
+    private int direction = 0;
+    private int speed = 100;
+
+    public STEPPER(int _index) {
+      index = _index - 1;
+    }
+
+    int[] encode32BitSignedInteger(int data) {
+      int[] encoded = { 0, 0, 0, 0, 0 };
+      boolean negative = data < 0;
+
+      int d = Math.abs(data);
+
+      encoded[0] = d & 0x7F;
+      encoded[1] = (d >> 7) & 0x7F;
+      encoded[2] = (d >> 14) & 0x7F;
+      encoded[3] = (d >> 21) & 0x7F;
+      encoded[4] = (d >> 28) & 0x07;
+
+      if (negative) {
+        encoded[4] |= 0x08;
+      }
+
+      return encoded;
+    }
+
+    int[] encodeCustomFloat(double input) {
+      int[] encoded = { 0, 0, 0, 0 };
+      int exponent = 0;
+      int sign = input < 0 ? 1 : 0;
+  
+      //input = abs((long)input);
+      double base10 = Math.floor(Math.log10(input));
+  
+      // Shift decimal to start of significand
+      exponent += base10;
+      input /= Math.pow(10, base10);
+  
+      // Shift decimal to the right as far as we can
+      while ((input - Math.floor(input) > 0) // ES FLOAT?
+        && input < MAX_SIGNIFICAND) {
+        exponent -= 1;
+        input *= 10;
+      }
+      // Reduce precision if necessary
+      while (input > MAX_SIGNIFICAND) {
+        exponent += 1;
+        input /= 10;
+      }
+      input = Math.floor(input);
+      exponent += 11;
+  
+      encoded[0] = (int)input & 0x7f;
+      encoded[1] = ((int)input >> 7) & 0x7f;
+      encoded[2] = ((int)input >> 14) & 0x7f;
+      encoded[3] = ((int)input >> 21) & 0x03 | (exponent & 0x0f) << 2 | (sign & 0x01) << 6;
+  
+      return encoded;
+    }    
+
+    /**
+     * Sets direction to an output
+     * 
+     * @param dir the direction
+     */
+    public void direction(int dir) {
+      direction = dir;
+    }
+
+    /**
+     * Gets direction of an output
+     */
+    public int direction() {
+      return direction;
+    }
+
+    public void enableOutputsStepper() {
+      int[] data = { FIRMATA_STEPPER_REQUEST, FIRMATA_STEPPER_ENABLE, index, 0x01 };
+      firmata.sendSysex(data);
+    }
+
+    public void disableOutputsStepper() {
+      int[] data = { FIRMATA_STEPPER_REQUEST, FIRMATA_STEPPER_ENABLE, index, 0x00 };
+      firmata.sendSysex(data);
+    }
+
+    public void steps(int steps) {
+      steps = direction > 0 ? steps * -1: steps;
+      int[] encoded = encode32BitSignedInteger(steps);
+      int[] data = { FIRMATA_STEPPER_REQUEST, FIRMATA_STEPPER_STEP, index, encoded[0], encoded[1], encoded[2], encoded[3], encoded[4]  };
+      status(1);
+      enableOutputsStepper();
+      firmata.sendSysex(data);
+    }
+
+    public void stop() {
+      int[] data = { FIRMATA_STEPPER_REQUEST, FIRMATA_STEPPER_STOP, index };
+      firmata.sendSysex(data);
+    }
+
+    /**
+     * Sets power to an output
+     * 
+     * @param pow the power
+     */
+    public void speed(int pow) {
+      int[] speed = encodeCustomFloat(pow);
+      int[] data = { FIRMATA_STEPPER_REQUEST, FIRMATA_STEPPER_SPEED, index, speed[0], speed[1], speed[2], speed[3] };
+      firmata.sendSysex(data);
+    }
+
+    /**
+    * Gets power of an output
+    */
+    public int speed() {
+      return speed;
+    }
+
+    public int status() {
+      return firmata.stepperData(index);
+    }
+
+    public void status(int value) {
+      firmata.stepperData(index, value);
+    }
+
+  }
+
+  /**
+   * Returns STEPPER Instance
+   *
+   */
+  public STEPPER stepper(int index) {
+    if (index < 1 || index > 3) {
+      throw new RuntimeException("Steppers are from 1 to 3");
+    }    
+    return new STEPPER(index);
+  }
+
+  
+
 }

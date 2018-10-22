@@ -100,6 +100,8 @@ public class Firmata {
   private final int SAMPLING_INTERVAL      = 0x7A; // set the poll rate of the main loop
   private final int SYSEX_NON_REALTIME     = 0x7E; // MIDI Reserved for non-realtime messages
   private final int SYSEX_REALTIME         = 0x7F; // MIDI Reserved for realtime messages
+  private final int FIRMATA_STEPPER_REQUEST         = 0x62; // 
+  private final int FIRMATA_STEPPER_MOVE_COMPLETE         = 0x0A; // 
 
   int waitForData = 0;
   int executeMultiByteCommand = 0;
@@ -111,6 +113,7 @@ public class Firmata {
   int[] digitalOutputData = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
   int[] digitalInputData  = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
   int[] analogInputData   = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  int[] steppersData   = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
   private final int MAX_PINS = 128;
 
@@ -243,6 +246,19 @@ public class Firmata {
     out.write(value >> 7);
   }
 
+  /**
+   * Sends a sysex message.
+   *
+   * @param data array of bytes to send
+   */
+  public void sendSysex(int[] data) {
+    out.write(START_SYSEX);
+    for (int d : data) {
+      out.write(d);
+    }
+    out.write(END_SYSEX);
+}
+
   private void setDigitalInputs(int portNumber, int portData) {
     //System.out.println("digital port " + portNumber + " is " + portData);
     digitalInputData[portNumber] = portData;
@@ -270,6 +286,15 @@ public class Firmata {
     out.write(ANALOG_MAPPING_QUERY);
     out.write(END_SYSEX);
   }
+
+  public int stepperData(int index) {
+    return steppersData[index];
+  }
+
+  public void stepperData(int index, int value) {
+    steppersData[index] = value;
+  }
+
 
   private void processSysexMessage() {
 //    System.out.print("[ ");
@@ -311,7 +336,12 @@ public class Firmata {
             out.write(1);
           }
         }
-        break;
+      break;
+      case FIRMATA_STEPPER_REQUEST:
+        if (storedInputData[1] == FIRMATA_STEPPER_MOVE_COMPLETE) {
+          steppersData[storedInputData[2]] = 0;
+        }
+      break;
     }
   }
 

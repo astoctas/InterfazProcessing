@@ -6,7 +6,7 @@
 	<property name="doc" location="reference"/> <!-- javadocs -->
 	<property name="jars" location="jars"/> <!-- jar files -->
 	<property name="lib" location="lib"/> <!-- local libraries linked against -->
-	<property name="dist" location="interfaz"/> <!-- build product location -->
+	<property name="dist" location="C:\Users\user\Documents\Processing\libraries\interfaz"/> <!-- build product location -->
 	<property name="resources" location="resources"/> <!-- location of general java resources -->
 	<property name="resources_macosx" location="resources_macosx"/> <!-- location of Mac OS X specific resources -->
 	<property name="compile.debug" value="true"/>
@@ -28,7 +28,7 @@
 	<target name="compile" depends="init" description="Compile code">
 		<mkdir dir="${bin}"/>
 		<javac deprecation="on" srcdir="${src}" destdir="${bin}"
-			   source="1.3" target="1.2"
+			   source="5" target="1.5"
 			   includeAntRuntime="no"
 			   classpathref="lib.path" debug="${compile.debug}">
 		</javac>
