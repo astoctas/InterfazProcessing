@@ -28,7 +28,7 @@
 	<target name="compile" depends="init" description="Compile code">
 		<mkdir dir="${bin}"/>
 		<javac deprecation="on" srcdir="${src}" destdir="${bin}"
-			   source="5" target="1.5"
+			   source="8" target="1.8"
 			   includeAntRuntime="no"
 			   classpathref="lib.path" debug="${compile.debug}">
 		</javac>

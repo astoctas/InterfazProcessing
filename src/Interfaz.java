@@ -27,8 +27,24 @@ package cc.interfaz;
 
 import processing.core.PApplet;
 import processing.serial.Serial;
+import java.lang.reflect.*;
+import java.util.HashMap;
+import java.util.Observer;
+import java.util.Observable;
 
 import org.firmata.Firmata;
+//import cc.digitalobserver.*;
+
+class DigitalObserver implements Observer {
+  Interfaz.DIGITAL dg;
+
+  public void setInstance(Interfaz.DIGITAL _dg) {
+    dg = _dg;
+  }
+  public void update(Observable obs, Object obj) {
+    dg.digitalEvent();
+  }    
+}
 
 /**
  * Together with the Firmata 2 firmware (an Arduino sketch uploaded to the
@@ -81,6 +97,8 @@ public class Interfaz {
    */
   public static final int HIGH = 1;
 
+  private final int FIRMATA_REPORT_ANALOG          = 0xC0; // enable analog input by pin #
+
   private static final int FIRMATA_LCD_REQUEST = 3;
   private static final int FIRMATA_LCD_PRINT = 0;
   private static final int FIRMATA_LCD_PUSH = 1;
@@ -104,6 +122,8 @@ public class Interfaz {
   private static final int FIRMATA_STEPPER_ACCEL = 0x08;
   private static final int FIRMATA_STEPPER_SPEED = 0x09;
   private static final int FIRMATA_STEPPER_MOVE_COMPLETE = 0x0a;
+  
+  private static final int FIRMATA_EXTENDED_ANALOG = 0x6F;
  
   private static final int  FIRMATA_I2C_REQUEST	 = 0x76;
   private static final int  FIRMATA_I2C_REPLY	 = 0x77;
@@ -151,7 +171,7 @@ public class Interfaz {
     }
   }
 
-    public void dispose() {
+  public void dispose() {
     this.serial.dispose();
   }
 
@@ -195,12 +215,12 @@ public class Interfaz {
     this.serial = new Serial(serialProxy, iname, irate);
 
     parent.registerMethod("dispose", this);
-
+    /*
     try {
       Thread.sleep(3000); // let bootloader timeout
     } catch (InterruptedException e) {
     }
-
+    */
     firmata.init();
     try {
       Thread.sleep(4000); // let firmware communication timeout
@@ -208,6 +228,7 @@ public class Interfaz {
     }
 
   }
+
 
   /**
    * Returns the last known value read from the digital pin: HIGH or LOW.
@@ -503,16 +524,21 @@ public class Interfaz {
       return direction;
     }
 
-    public void enableOutputsStepper() {
+    private void enableOutputsStepper() {
       int[] data = { FIRMATA_STEPPER_REQUEST, FIRMATA_STEPPER_ENABLE, index, 0x01 };
       firmata.sendSysex(data);
     }
 
-    public void disableOutputsStepper() {
+    private void disableOutputsStepper() {
       int[] data = { FIRMATA_STEPPER_REQUEST, FIRMATA_STEPPER_ENABLE, index, 0x00 };
       firmata.sendSysex(data);
     }
 
+    /**
+     * Sets steps to move and starts movement
+     * 
+     * @param steps the steps to move
+     */    
     public void steps(int steps) {
       steps = direction > 0 ? steps * -1: steps;
       int[] encoded = encode32BitSignedInteger(steps);
@@ -522,15 +548,19 @@ public class Interfaz {
       firmata.sendSysex(data);
     }
 
+    /**
+     * Stops the motor 
+     * 
+     */
     public void stop() {
       int[] data = { FIRMATA_STEPPER_REQUEST, FIRMATA_STEPPER_STOP, index };
       firmata.sendSysex(data);
     }
 
     /**
-     * Sets power to an output
+     * Sets speed of motor
      * 
-     * @param pow the power
+     * @param speed the speed in steps per second
      */
     public void speed(int pow) {
       int[] speed = encodeCustomFloat(pow);
@@ -539,17 +569,21 @@ public class Interfaz {
     }
 
     /**
-    * Gets power of an output
+    * Gets speed of a motor
     */
     public int speed() {
       return speed;
     }
 
+    /**
+     * Gets running status - 0: stopped, 1: running
+     * 
+     */    
     public int status() {
       return firmata.stepperData(index);
     }
 
-    public void status(int value) {
+    private void status(int value) {
       firmata.stepperData(index, value);
     }
 
@@ -566,6 +600,323 @@ public class Interfaz {
     return new STEPPER(index);
   }
 
-  
+   /*
+  * SERVOS
+  */
+  public class SERVO {
+    private int index;
+    private int position = 90;
+    private int[] pins = { 10, 11, 12 };
 
+    public SERVO(int _index) {
+      index = _index - 1;
+    }
+
+    /**
+     * Sets servo position
+     * 
+     * @param pos the position of servo
+     */    
+    public void position(int pos) {
+      position = pos;
+      int[] data = { FIRMATA_EXTENDED_ANALOG, pins[index], position & 0x7F, (position >> 7) & 0x7F };
+      firmata.sendSysex(data);
+    }
+  }
+
+  /**
+   * Returns SERVO Instance
+   *
+   */
+  public SERVO servo(int index) {
+    if (index < 1 || index > 3) {
+      throw new RuntimeException("Servos are from 1 to 3");
+    }
+    return new SERVO(index);
+  }
+  
+  
+   /*
+  * ANALOG
+  */
+  public class ANALOG {
+    private int index;
+    //private int[] pins = {54,55,56,57,58,59,60,61};
+
+    public ANALOG(int _index) {
+      index = _index - 1;
+    }
+
+    /**
+     * Starts reporting
+     * 
+     */    
+    public void on() {
+      firmata.reportAnalog(index, 1);
+    }
+
+    /**
+     * Stops reporting
+     * 
+     */    
+    public void off() {
+      firmata.reportAnalog(index, 0);
+    }
+    
+    /**
+     * Gets last received value of analog
+     * 
+     */        
+    public int value() {
+      return firmata.analogRead(index);
+    }
+
+  }
+
+  /**
+   * Returns ANALOG Instance
+   *
+   */
+  public ANALOG analog(int index) {
+    if (index < 1 || index > 8) {
+      throw new RuntimeException("Analogs are from 1 to 8");
+    }    
+    return new ANALOG(index);
+  }    
+
+
+   /*
+  * DIGITAL
+  */
+  public class DIGITAL  {
+    private int[] pins = { 64, 65, 66, 67, 68, 69 };
+    private int port = 0x08;
+    Method digitalEventMethod;
+    DigitalObserver digitalObserver = new DigitalObserver();
+    
+    public DIGITAL() {
+      digitalEventMethod = findCallback("digitalEvent");
+      digitalObserver.setInstance(this);
+      firmata.addObserver(firmata.digitalObservable, digitalObserver);
+    }
+
+    public void digitalEvent() {
+      if(digitalEventMethod == null) return;
+      try {
+        digitalEventMethod.invoke(parent);
+      } catch (Exception e) {
+        throw new RuntimeException("Callback error");
+      }      
+    }
+
+    private Method findCallback(final String name) {
+      try {
+        return parent.getClass().getMethod(name);
+      } catch (Exception e) {
+      }
+      // Permit callback(Object) as alternative to callback(Serial).
+      try {
+        return parent.getClass().getMethod(name, this.getClass());
+      } catch (Exception e) {
+      }
+      return null;
+    }
+
+    /**
+     * Starts reporting
+     * 
+     */    
+    public void on() {
+      firmata.reportDigital(port, 1);
+    }
+
+    /**
+     * Stops reporting
+     * 
+     */    
+    public void off() {
+      firmata.reportDigital(port, 0);
+    }
+    
+    /**
+     * Gets last received value of digital pin
+     * 
+     * @param index the digital pin
+     */        
+    public int value(int index) {
+      return firmata.digitalRead(pins[index - 1]);
+    }
+
+     /**
+     * Gets last received value of digital port
+     * 
+     */        
+    public int value() {
+      return firmata.digitalReadPort(port);
+    }
+    
+    /**
+     * Enables or disables pullup in digital pin
+     * 
+     * @param index the digital pin
+     * @param enable true to enable, false to disable pullup
+     */        
+    public void pullup(int index, boolean enable) {
+      int mode = (enable) ? 11 : 0;
+      firmata.pinMode(pins[index - 1], mode);
+    }
+
+  }
+
+  /**
+   * Returns DIGITAL Instance
+   *
+   */
+  public DIGITAL digital() {
+    return new DIGITAL();
+  }   
+
+   /*
+  * I2C
+  */
+  public class I2C {
+    protected int address;
+    private int delay;
+    protected HashMap<Integer, REG> registers = new HashMap();
+
+    public class REG {
+      int register;
+
+      public REG(int _register) {
+        register = _register;
+      }
+
+      /**
+       * Starts reporting
+       * 
+       * @param bytes the amount of bytes to report from register
+       */    
+      public void on(int bytes) {
+
+        int address_lsb = address & 0x7F;
+        int address_msb = (address >> 7) & 0x7F;
+    
+        if (address_msb > 0) {
+          address_msb |= FIRMATA_I2C_10_BIT;
+        }
+        if (bytes == 0) {
+          address_msb |= FIRMATA_I2C_STOP_READING;
+        }
+        else {
+          address_msb |= FIRMATA_I2C_READ_CONTINUOUS;		
+        }
+    
+        int bytes_lsb = (bytes & 0x7F);
+        int bytes_msb = (bytes >> 7) & 0x7F;
+    
+        int register_lsb = (register & 0x7F);
+        int register_msb = (register >> 7) & 0x7F;
+    
+        int[] data = { FIRMATA_I2C_REQUEST, address_lsb, address_msb, register_lsb, register_msb, bytes_lsb, bytes_msb };
+        firmata.sendSysex(data);
+            
+      }
+  
+      /**
+       * Stops reporting
+       * 
+       */    
+      public void off() {
+        on(0);
+      }
+      
+      /**
+       * Gets last received value of analog
+       * 
+       */        
+      public int[] value() {
+        return firmata.getI2CInputs(address, register);
+      }
+
+      /**
+       * Performs a write of data on the register 
+       * 
+       * @param data the array of data to write into register
+       */        
+      public void write(int[] data) {
+        int address_lsb = address & 0x7F;
+        int address_msb = (address >> 7) & 0x7F;
+        if (address_msb > 0) {
+          address_msb |= FIRMATA_I2C_10_BIT;
+        }
+        address_msb |= FIRMATA_I2C_WRITE;
+        int register_lsb = (register & 0x7F);
+        int register_msb = (register >> 7) & 0x7F;
+
+        int[] dataToWrite = new int[data.length * 2 + 5];
+        dataToWrite[0] = FIRMATA_I2C_REQUEST;
+        dataToWrite[1] = address_lsb;
+        dataToWrite[2] = address_msb;
+        dataToWrite[3] = register_lsb;
+        dataToWrite[4] = register_msb;
+        int j = 5;
+        for (int d : data) {
+          dataToWrite[j++] = d & 0x7F;
+          dataToWrite[j++] = (d >> 7) & 0x7F;
+        }
+       	firmata.sendSysex(dataToWrite);
+      }   
+
+    }
+
+    public I2C(int _address) {
+      address = _address;
+      delay = 50;
+      int[] data = { FIRMATA_I2C_CONFIG, delay, 0 };
+      firmata.sendSysex(data);
+    }
+
+    public I2C(int _address, int _delay) {
+      address = _address;
+      delay = _delay;
+      int[] data = { FIRMATA_I2C_CONFIG, delay & 0x7F, (delay>>7) & 0x7F };
+      firmata.sendSysex(data);
+    }
+
+    /**
+     * Returns REGISTER Instance.  If the instance exists, returns the same existent
+     *
+     * @param _register the address of the register on device
+     */    
+    public REG register(int _register) {
+      if(!registers.containsKey(_register)) {
+        REG r = new REG(_register);
+        registers.put(_register, r);
+      }
+      return registers.get(_register);
+
+    }
+
+
+  }
+
+  /**
+   * Returns I2C Instance
+   *
+   * @param address the address of device
+   */
+  public I2C i2c(int address) {
+    return new I2C(address);
+  }
+  
+  /**
+   * Returns I2C Instance with delay
+   *
+   * @param address the address of device
+   * @param delay the delay between write and read on device in microseconds
+   */
+  public I2C i2c(int address, int delay) {
+    return new I2C(address, delay);
+  }
+  
 }

@@ -25,6 +25,17 @@
 
 package org.firmata; // hope this is okay!
 
+import java.util.HashMap;
+import java.util.Observable;
+import java.util.Observer;
+
+class DigitalObservable extends Observable {
+  public void change() {
+    setChanged();
+    notifyObservers();
+  }
+}
+
 /**
  * Internal class used by the Arduino class to parse the Firmata protocol.
  */
@@ -57,6 +68,10 @@ public class Firmata {
    * Constant to set a pin to I2C mode (in a call to pinMode()).
    */
   public static final int I2C = 6;
+  /**
+   * Constant to set a pin to INPUT_PULLUP mode (in a call to pinMode()).
+   */
+  public static final int INPUT_PULLUP = 11;
 
   /**
    * Constant to write a high value (+5 volts) to a pin (in a call to
@@ -80,6 +95,7 @@ public class Firmata {
   private final int SYSTEM_RESET           = 0xFF; // reset from MIDI
   private final int START_SYSEX            = 0xF0; // start a MIDI SysEx message
   private final int END_SYSEX              = 0xF7; // end a MIDI SysEx message
+  private final int  FIRMATA_I2C_REPLY	 = 0x77;
 
   // extended command set using sysex (0-127/0x00-0x7F)
   /* 0x00-0x0F reserved for user-defined commands */
@@ -113,7 +129,8 @@ public class Firmata {
   int[] digitalOutputData = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
   int[] digitalInputData  = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
   int[] analogInputData   = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-  int[] steppersData   = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  int[] steppersData = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  HashMap<Integer, HashMap<Integer, int[]>> i2cData = new HashMap();
 
   private final int MAX_PINS = 128;
 
@@ -123,6 +140,8 @@ public class Firmata {
 
   int majorVersion = 0;
   int minorVersion = 0;
+
+  public DigitalObservable digitalObservable = new DigitalObservable();
 
   /**
    * An interface that the Firmata class uses to write output to the Arduino
@@ -152,20 +171,37 @@ public class Firmata {
 
   public void init() {
     // enable all ports; firmware should ignore non-existent ones
+    /*
     for (int i = 0; i < 16; i++) {
       out.write(REPORT_DIGITAL | i);
       out.write(1);
     }
-
+    */
     //queryCapabilities();
     queryAnalogMapping();
 
-//    for (int i = 0; i < 16; i++) {
-//      out.write(REPORT_ANALOG | i);
-//      out.write(1);
-//    }
+    //    for (int i = 0; i < 16; i++) {
+    //      out.write(REPORT_ANALOG | i);
+    //      out.write(1);
+    //    }
+
   }
 
+
+  public void addObserver(Observable a, Observer b) {
+    a.addObserver(b);
+  }
+
+  private void _delay() {
+    try
+    {
+        Thread.sleep(10);
+    }
+    catch(InterruptedException ex)
+    {
+        Thread.currentThread().interrupt();
+    }  
+  }
   /**
    * Returns the last known value read from the digital pin: HIGH or LOW.
    *
@@ -175,6 +211,17 @@ public class Firmata {
   public int digitalRead(int pin) {
     return (digitalInputData[pin >> 3] >> (pin & 0x07)) & 0x01;
   }
+
+  
+  /**
+   * Returns the last known value read from the digital port.
+   *
+   * @param port the digital port whose value should be returned 
+   */
+  public int digitalReadPort(int port) {
+    return digitalInputData[port];
+  }
+
 
   /**
    * Returns the last known value read from the analog pin: 0 (0 volts) to
@@ -196,7 +243,34 @@ public class Firmata {
     out.write(SET_PIN_MODE);
     out.write(pin);
     out.write(mode);
+    _delay();
   }
+
+  
+  /**
+   * Sets analog reporting
+   *
+   * @param channel the analog channel to report
+   * @param mode starts (1) or stops (0) reporting
+   */
+  public void reportAnalog(int channel, int mode) {
+    out.write(REPORT_ANALOG | channel);
+    out.write(mode);
+    _delay();
+  }
+  
+    /**
+   * Sets digital reporting
+   *
+   * @param port the digital port  to report
+   * @param mode starts (1) or stops (0) reporting
+   */
+  public void reportDigital(int port, int mode) {
+    out.write(REPORT_DIGITAL |  port);
+    out.write(mode);
+    _delay();
+  }
+
 
   /**
    * Write to a digital pin (the pin must have been put into output mode with
@@ -217,6 +291,7 @@ public class Firmata {
     out.write(DIGITAL_MESSAGE | portNumber);
     out.write(digitalOutputData[portNumber] & 0x7F);
     out.write(digitalOutputData[portNumber] >> 7);
+    _delay();
   }
 
   /**
@@ -232,6 +307,7 @@ public class Firmata {
     out.write(ANALOG_MESSAGE | (pin & 0x0F));
     out.write(value & 0x7F);
     out.write(value >> 7);
+    _delay();
   }
 
   /**
@@ -244,6 +320,7 @@ public class Firmata {
     out.write(ANALOG_MESSAGE | (pin & 0x0F));
     out.write(value & 0x7F);
     out.write(value >> 7);
+    _delay();
   }
 
   /**
@@ -257,11 +334,30 @@ public class Firmata {
       out.write(d);
     }
     out.write(END_SYSEX);
-}
+    _delay();
+  }
+
+  public int[] getI2CInputs(int address, int register) {
+    if (!i2cData.containsKey(address)) {
+      int[] data = {};
+      return data;
+    }
+    return i2cData.get(address).get(register);
+  }
+
+
+  public void setI2CInputs(int address, int register, int[] value) {
+    if (!i2cData.containsKey(address)) {
+//      Hashmap<Integer, Integer> r = new HashMap<>()
+      i2cData.put(address, new HashMap());
+    }
+    i2cData.get(address).put(register, value);
+  }
 
   private void setDigitalInputs(int portNumber, int portData) {
     //System.out.println("digital port " + portNumber + " is " + portData);
     digitalInputData[portNumber] = portData;
+    digitalObservable.change();
   }
 
   private void setAnalogInput(int pin, int value) {
@@ -279,12 +375,14 @@ public class Firmata {
     out.write(START_SYSEX);
     out.write(CAPABILITY_QUERY);
     out.write(END_SYSEX);
+    _delay();
   }
 
   private void queryAnalogMapping() {
     out.write(START_SYSEX);
     out.write(ANALOG_MAPPING_QUERY);
     out.write(END_SYSEX);
+    _delay();
   }
 
   public int stepperData(int index) {
@@ -296,7 +394,7 @@ public class Firmata {
   }
 
 
-  private void processSysexMessage() {
+private void processSysexMessage() {
 //    System.out.print("[ ");
 //    for (int i = 0; i < storedInputData.length; i++) System.out.print(storedInputData[i] + " ");
 //    System.out.println("]");
@@ -330,17 +428,30 @@ public class Firmata {
           analogChannel[pin] = 127;
         for (int i = 1; i < sysexBytesRead; i++)
           analogChannel[i - 1] = storedInputData[i];
+        /*  
         for (int pin = 0; pin < analogChannel.length; pin++) {
           if (analogChannel[pin] != 127) {
             out.write(REPORT_ANALOG | analogChannel[pin]);
             out.write(1);
           }
         }
+        */
       break;
       case FIRMATA_STEPPER_REQUEST:
         if (storedInputData[1] == FIRMATA_STEPPER_MOVE_COMPLETE) {
           steppersData[storedInputData[2]] = 0;
         }
+      break;
+    case FIRMATA_I2C_REPLY:
+        int[] reply_buffer = new int[(sysexBytesRead - 5) / 2];
+        int address = storedInputData[1] | storedInputData[2] << 7;
+        int register = storedInputData[3] | storedInputData[4] << 7;
+        int j = 0;
+        for (int i = 5; i + 1 < sysexBytesRead; i = i + 2) {
+          int reply_byte = (storedInputData[i] | storedInputData[i + 1] << 7) ;
+          reply_buffer[j++] = reply_byte;
+        }
+        setI2CInputs(address, register, reply_buffer);
       break;
     }
   }
